@@ -102,6 +102,7 @@
       <path value="$PROJECT_DIR$/manager/vendor/psr/log" />
       <path value="$PROJECT_DIR$/manager/vendor/psr/cache" />
       <path value="$PROJECT_DIR$/manager/vendor/composer" />
+      <path value="$PROJECT_DIR$/manager/vendor/ramsey/uuid" />
     </include_path>
   </component>
   <component name="PhpProjectSharedConfiguration" php_language_level="7.1" />

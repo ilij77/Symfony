@@ -1,0 +1,14 @@
+<?php
+
+
+namespace App\Model\User\Entity\Service;
+
+
+use App\Model\User\Entity\User\Email;
+use App\Model\User\Entity\User\ResetToken;
+
+interface ResetTokenSender
+{
+	public function send(Email $email, ResetToken $token): void;
+
+}
