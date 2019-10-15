@@ -9,9 +9,11 @@
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/cache" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/collections" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/common" />
+      <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/data-fixtures" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/dbal" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/doctrine-bundle" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/doctrine-cache-bundle" />
+      <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/doctrine-fixtures-bundle" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/doctrine-migrations-bundle" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/event-manager" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/doctrine/inflector" />
@@ -25,6 +27,7 @@
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/egulias/email-validator" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/facebook/webdriver" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/fig/link-util" />
+      <excludeFolder url="file://$MODULE_DIR$/manager/vendor/finesse/swiftmailer-defaults-plugin" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/jdorn/sql-formatter" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/monolog/monolog" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/nikic/php-parser" />

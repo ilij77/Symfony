@@ -4,7 +4,7 @@
 namespace App\Model\User\UseCase\Reset\Reset;
 
 
-use App\Model\User\Entity\Service\PasswordHasher;
+use App\Model\User\Service\PasswordHasher;
 use App\Model\User\Entity\User\UserRepository;
 use App\Model\User\Flusher;
 use App\Model\User\UseCase\Reset\Reset;

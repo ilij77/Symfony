@@ -1,21 +1,19 @@
 <?php
 
 
-namespace App\Model\User\Entity\Service;
+namespace App\Model\User\Service;
 
 
 use App\Model\User\Entity\User\ResetToken;
 use Ramsey\Uuid\Uuid;
-use function Sodium\add;
+
 
 class ResetTokenizer
 {
-	/**
-	 * @var \DateTimeImmutable
-	 */
+
 	private $interval;
 
-	public function __construct(\DateTimeImmutable $interval)
+	public function __construct(\DateInterval $interval)
 	{
 
 		$this->interval = $interval;

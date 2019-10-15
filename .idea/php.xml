@@ -103,6 +103,9 @@
       <path value="$PROJECT_DIR$/manager/vendor/psr/cache" />
       <path value="$PROJECT_DIR$/manager/vendor/composer" />
       <path value="$PROJECT_DIR$/manager/vendor/ramsey/uuid" />
+      <path value="$PROJECT_DIR$/manager/vendor/finesse/swiftmailer-defaults-plugin" />
+      <path value="$PROJECT_DIR$/manager/vendor/doctrine/data-fixtures" />
+      <path value="$PROJECT_DIR$/manager/vendor/doctrine/doctrine-fixtures-bundle" />
     </include_path>
   </component>
   <component name="PhpProjectSharedConfiguration" php_language_level="7.1" />

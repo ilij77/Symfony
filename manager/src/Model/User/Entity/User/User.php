@@ -7,47 +7,72 @@ namespace App\Model\User\Entity\User;
 
 use Doctrine\Common\Collections\ArrayCollection;
 use phpDocumentor\Reflection\Types\Boolean;
+use Doctrine\ORM\Mapping as ORM;
 
+/**
+ * @ORM\Entity
+ * @ORM\HasLifecycleCallbacks
+ * @ORM\Table(name="user_users",uniqueConstraints={
+ * @ORM\UniqueConstraint(columns={"email"}),
+ * @ORM\UniqueConstraint(columns={"reset_token_token"})
+ * })
+ */
 class User
 {
 
 	private const  STATUS_NEW='new';
 	private const  STATUS_WAIT='wait';
-	private const  STATUS_ACTIVE='active';
+	public const  STATUS_ACTIVE='active';
 	/**
-	 * @var string
+	 * @var Id
+	 * @ORM\Column(type="user_user_id")
+	 * @ORM\Id
 	 */
 	private $id;
 	/**
 	 * @var \DateTimeImmutable
+	 * @ORM\Column(type="datetime_immutable")
 	 */
 	private $date;
 	/**
-	 * @var string
+	 * @var Email|null
+	 * @ORM\Column(type="user_user_email",nullable=true)
 	 */
 	private $email;
 
 	/**
 	 * @var string
+	 * @ORM\Column(type="string",nullable=true,name="password_hash")
 	 */
 	private $passwordHash;
 
 	/**
 	 * @var string
+	 * @ORM\Column(type="string",length=16)
 	 */
 	private $status;
 	/**
 	 * @var string
+	 * @ORM\Column(type="string",nullable=true,name="confirm_token")
 	 */
 	private $confirmToken;
 	/**
 	 * @var Network[]|ArrayCollection
+	 * @ORM\OneToMany(targetEntity="Network",mappedBy="user",orphanRemoval=true,cascade={"persist"})
+
 	 */
 	private $networks;
 	/**
 	 * @var ResetToken|null
+	 * @ORM\Embedded(class="ResetToken",columnPrefix="reset_token_")
 	 */
 	private $resetToken;
+
+	/**
+	 * @var Role
+	 * @ORM\Column(type="user_user_role")
+	 */
+	private $role;
 
 
 
@@ -55,31 +80,35 @@ class User
 	{
 		$this->id = $id;
 		$this->date = $date;
-		$this->status=self::STATUS_NEW;
+		$this->role=Role::user();
 		$this->networks=new ArrayCollection();
 	}
 
-	public function signUpByEmail(Email $email,string  $hash,string $token):void
+	public static function signUpByEmail(Id $id, \DateTimeImmutable $date,Email $email,string  $hash,string $token)
 	{
-		if (!$this->isNew()){
-			throw new \DomainException('User is already signed up.');
-		}
-		$this->email=$email;
-		$this->passwordHash=$hash;
-		$this->confirmToken=$token;
-		$this->status=self::STATUS_WAIT;
+//		if (!$this->isNew()){
+//			throw new \DomainException('User is already signed up.');
+//		}
+		$user=new self($id,$date);
+		$user->email=$email;
+		$user->passwordHash=$hash;
+		$user->confirmToken=$token;
+		$user->status=self::STATUS_WAIT;
+		return $user;
 
 
 	}
 
-	public function signUpByNetwork(string  $network, string  $identity):void
+	public static function signUpByNetwork(Id $id,\DateTimeImmutable $date,string  $network, string  $identity)
 	{
 
-		if (!$this->isNew()){
-			throw new \DomainException('User is already signed up.');
-		}
-		$this->attachNetwork($network,$identity);
-		$this->status=self::STATUS_ACTIVE;
+//		if (!$this->isNew()){
+//			throw new \DomainException('User is already signed up.');
+//		}
+		$user=new self($id,$date);
+		$user->attachNetwork($network,$identity);
+		$user->status=self::STATUS_ACTIVE;
+		return $user;
 	}
 
 	private function attachNetwork(string $network, string $identity):void
@@ -98,6 +127,15 @@ class User
 		}
 		$this->status=self::STATUS_ACTIVE;
 		$this->confirmToken=null;
+
+	}
+
+	public function changeRole(Role  $role)
+	{
+		if ($this->role->isEqual($role)){
+			throw new \DomainException('Role is already same.');
+		}
+		$this->role=$role;
 
 	}
 
@@ -159,6 +197,14 @@ class User
 		return $this->confirmToken;
 	}
 
+	/**
+	 * @return Role
+	 */
+	public function getRole(): Role
+	{
+		return $this->role;
+	}
+
 	public function requestPasswordReset(ResetToken $token,\DateTimeImmutable $date):void
 	{
 		if (!$this->isActive()){
@@ -195,6 +241,17 @@ class User
 
 
 	}
+	/**
+	 * @ORM\PostLoad()
+	 */
+	public function checkEmbeds():void
+	{
+		if ($this->resetToken->isEmpty()) {
+			$this->resetToken = null;
+		}
+	}
+
+
 
 
 }
