@@ -19,7 +19,7 @@ class UserIdentity implements UserInterface, EquatableInterface
 
 
 	public function __construct(
-		string $id,
+	string $id,
 	string $username,
 	string $password,
 	string $role,
@@ -31,7 +31,7 @@ class UserIdentity implements UserInterface, EquatableInterface
 		$this->username = $username;
 		$this->password = $password;
 		$this->role = $role;
-		$this->role = $status;
+		$this->status = $status;
 	}
 
 	public function getId():string
@@ -42,7 +42,7 @@ class UserIdentity implements UserInterface, EquatableInterface
 
 	public function isActive():bool
 	{
-		return  $this->status ===User::STATUS_ACTIVE;
+		return  $this->status === User::STATUS_ACTIVE;
 
 	}
 	public function getUsername()

@@ -9,9 +9,11 @@ use Symfony\Component\Security\Http\Authentication\AuthenticationUtils;
 
 class AuthController extends AbstractController
 {
-    /**
-     * @Route("/login", name="app_login")
-     */
+	/**
+	 * @Route("/login", name="app_login")
+	 * @param AuthenticationUtils $authenticationUtils
+	 * @return Response
+	 */
     public function login(AuthenticationUtils $authenticationUtils): Response
     {
         // get the login error if there is one

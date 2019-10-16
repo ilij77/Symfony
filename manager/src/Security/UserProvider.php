@@ -23,7 +23,7 @@ class UserProvider implements UserProviderInterface
 
 	public function loadUserByUsername($username):UserInterface
 	{
-		$user=$this->loadUserByUsername($username);
+		$user=$this->loadUser($username);
 		return  self::identityByUser($user);
 
 
@@ -31,7 +31,7 @@ class UserProvider implements UserProviderInterface
 
 	public function refreshUser(UserInterface $identity):UserInterface
 	{
-		$user=$this->loadUserByUsername($identity->getUsername());
+		$user=$this->loadUser($identity->getUsername());
 		return  self::identityByUser($user);
 	}
 
@@ -42,7 +42,7 @@ class UserProvider implements UserProviderInterface
 	}
 	private  function  loadUser($username):AuthView
 	{
-		$user=$this->users->findForAuth($username());
+		$user=$this->users->findForAuth($username);
 		if (!$user){
 			throw new UsernameNotFoundException();
 		}
@@ -59,4 +59,5 @@ class UserProvider implements UserProviderInterface
 		);
 
 	}
+
 }
