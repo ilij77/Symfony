@@ -25,5 +25,4 @@ class IdType extends GuidType
     {
         return self::NAME;
     }
-
 }
