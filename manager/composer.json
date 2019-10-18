@@ -6,6 +6,8 @@
         "ext-ctype": "*",
         "ext-iconv": "*",
         "finesse/swiftmailer-defaults-plugin": "^2.0",
+        "knpuniversity/oauth2-client-bundle": "^1.29",
+        "league/oauth2-facebook": "^2.0",
         "ramsey/uuid": "^3.8",
         "sensio/framework-extra-bundle": "^5.1",
         "symfony/asset": "4.2.*",
@@ -25,6 +27,7 @@
         "symfony/twig-bundle": "4.2.*",
         "symfony/validator": "4.2.*",
         "symfony/web-link": "4.2.*",
+        "symfony/webpack-encore-bundle": "^1.6",
         "symfony/yaml": "4.2.*",
         "webmozart/assert": "^1.4"
     },
