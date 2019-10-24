@@ -42,6 +42,7 @@
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/phpdocumentor/reflection-common" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/phpdocumentor/reflection-docblock" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/phpdocumentor/type-resolver" />
+      <excludeFolder url="file://$MODULE_DIR$/manager/vendor/predis/predis" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/psr/cache" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/psr/container" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/psr/http-message" />

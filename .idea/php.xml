@@ -116,6 +116,7 @@
       <path value="$PROJECT_DIR$/manager/vendor/league/oauth2-facebook" />
       <path value="$PROJECT_DIR$/manager/vendor/symfony/service-contracts" />
       <path value="$PROJECT_DIR$/manager/vendor/symfony/webpack-encore-bundle" />
+      <path value="$PROJECT_DIR$/manager/vendor/predis/predis" />
     </include_path>
   </component>
   <component name="PhpProjectSharedConfiguration" php_language_level="7.1" />
