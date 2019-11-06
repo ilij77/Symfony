@@ -33,6 +33,7 @@ class UserFetcher
 				'id',
 				'email',
 				'password_hash',
+				'TRIM(CONCAT(name_first, \' \',name_last)) AS name',
 				'role',
 				'status'
 			)
@@ -53,6 +54,7 @@ class UserFetcher
 				'u.id',
 				'u.email',
 				'u.password_hash',
+				'TRIM(CONCAT(u,name_first, \' \',u.name_last)) AS name',
 				'u.role',
 				'u.status'
 			)
@@ -87,12 +89,34 @@ class UserFetcher
 
 		return $result ?: null;
 	}
+
+	public function findBySignUpConfirmToken(string  $token)
+	{
+		$stmt=$this->connection->createQueryBuilder()
+			->select(
+				'id',
+				'email',
+				'role',
+				'status'
+			)
+			->from('user_users')
+			->where('confirm_token=:token')
+			->setParameter(':token',$token)
+			->execute();
+		$stmt->setFetchMode(FetchMode::CUSTOM_OBJECT,ShortView::class);
+		$result=$stmt->fetch();
+		return $result ?: null;
+
+	}
+
 	public function findDetail(string $id): ?DetailView
 	{
 		$stmt = $this->connection->createQueryBuilder()
 			->select(
 				'id',
 				'date',
+				'name_first first_name',
+				'name_last last_name',
 				'email',
 				'role',
 				'status'
@@ -119,6 +143,14 @@ class UserFetcher
 		$view->networks = $stmt->fetchAll();
 
 		return $view;
+	}
+
+	public function getDetail(string $id):DetailView
+	{
+		if (!$detail=$this->findDetail($id)){
+			throw new \LogicException('User os not found.');
+		}
+		return  $detail;
 	}
 
 }

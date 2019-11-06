@@ -29,7 +29,7 @@ class HomeTest extends WebTestCase
 		$crawler = $client->request('GET', '/');
 
 		$this->assertSame(200, $client->getResponse()->getStatusCode());
-		$this->assertContains('Hello', $crawler->filter('h1')->text());
+		$this->assertContains('Home', $crawler->filter('title')->text());
 
 	}
 

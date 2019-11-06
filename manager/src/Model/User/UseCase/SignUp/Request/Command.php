@@ -14,6 +14,18 @@ class Command
      * @Assert\Email()
      */
     public $email;
+	/**
+	 * @var string
+	 * @Assert\NotBlank()
+	 * @Assert\Email()
+	 */
+	public $firstName;
+	/**
+	 * @var string
+	 * @Assert\NotBlank()
+	 * @Assert\Email()
+	 */
+	public $lastName;
     /**
      * @var string
      * @Assert\NotBlank()

@@ -1,0 +1,2324 @@
+Index: manager/templates/app/profile/show.html.twig
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/templates/app/profile/show.html.twig	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/templates/app/profile/show.html.twig	(date 1573080291923)
+@@ -16,6 +16,20 @@
+         <div class="card-body">
+             <table class="table table-bordered mb-0">
+                 <tbody>
++                <tr>
++                    <th>Name</th>
++                    <td>
++                        {{ user.first_name }} {{ user.last_name }}
++                        <a href="{{ path('profile.name') }}" class="btn btn-sm btn-outline-primary"><span class="fa fa-pencil"></span></a>
++                    </td>
++                </tr>
++                <tr>
++                    <th>Email</th>
++                    <td>
++                        {{ user.email }}
++                        <a href="{{ path('profile.email') }}" class="btn btn-sm btn-outline-primary"><span class="fa fa-pencil"></span></a>
++                    </td>
++                </tr>
+                     <tr>
+                         <th>ID</th>
+                         <td>{{ user.id }}</td>
+@@ -43,22 +57,36 @@
+         </div>
+     </div>
+ 
+-    {% if user.networks %}
++
+         <div class="card">
+             <div class="card-header">Networks</div>
+             <div class="card-body">
+-                <table class="table table-bordered mb-0">
++                {% if user.networks %}
++                <table class="table table-bordered">
+                     <tbody>
+                         {% for network in user.networks %}
+                             <tr>
+                                 <th>{{ network.network }}</th>
+                                 <td>{{ network.identity }}</td>
++                                <td>
++                                    <form action="{{ url('profile.oauth.detach',{network: network.network, identity: network.identity}) }}"
++                                    method="post" onsubmit="return confirm('Are you sure?')">
++                                        <input type="hidden" name="_method" value="DELETE"/>
++                                        <input type="hidden" name="token" value="{{ csrf_token('delete') }}"/>
++                                        <button type="submit" class="btn btn-sm btn-danger">
++                                            <i class="fa fa-trash"></i>
++                                        </button>
++
++                                    </form>
++                                </td>
+                             </tr>
+                         {% endfor %}
+                     </tbody>
+                 </table>
++                {% endif %}
++                <a href="{{  path('profile.oauth.facebook') }}" class="btn btn-facebook">Attach Facebok</a>
+             </div>
+         </div>
+-    {% endif %}
++
+ 
+ {% endblock %}
+\ No newline at end of file
+Index: manager/src/Controller/Auth/SignUpController.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Controller/Auth/SignUpController.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Controller/Auth/SignUpController.php	(date 1572480979438)
+@@ -5,20 +5,27 @@
+ namespace App\Controller\Auth;
+ 
+ use App\Model\User\UseCase\SignUp;
++use App\ReadModel\User\UserFetcher;
++use App\Security\LoginFormAuthenticator;
+ use Psr\Log\LoggerInterface;
+ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+ use Symfony\Component\HttpFoundation\Request;
+ use Symfony\Component\HttpFoundation\Response;
+ use Symfony\Component\Routing\Annotation\Route;
++use Symfony\Component\Security\Core\User\UserProviderInterface;
++use Symfony\Component\Security\Guard\GuardAuthenticatorHandler;
+ 
+ class SignUpController extends AbstractController
+ {
+     private $logger;
+ 
+-    public function __construct(LoggerInterface $logger)
++	private $users;
++
++	public function __construct(UserFetcher $users, LoggerInterface $logger)
+     {
+         $this->logger = $logger;
+-    }
++		$this->users = $users;
++	}
+ 
+     /**
+      * @Route("/signup", name="auth.signup")
+@@ -51,22 +58,35 @@
+ 
+     /**
+      * @Route("/signup/{token}", name="auth.signup.confirm")
++	 * @param Request $request
+      * @param string $token
+      * @param SignUp\Confirm\ByToken\Handler $handler
++	 * @param  UserProviderInterface $userProvider
++	 * @param GuardAuthenticatorHandler $guardHandler
++	 * @param LoginFormAuthenticator $authenticator
+      * @return Response
+      */
+-    public function confirm(string $token, SignUp\Confirm\ByToken\Handler $handler): Response
++    public function confirm(
++    	Request $request,
++		string $token,
++		SignUp\Confirm\ByToken\Handler $handler,
++		UserProviderInterface $userProvider,
++		GuardAuthenticatorHandler $guardHandler,
++		LoginFormAuthenticator $authenticator): Response
+     {
+-        $command = new SignUp\Confirm\Command($token);
++    	if (!$user=$this->users->findBySignUpConfirmToken($token)){
++    		$this->addFlash('error','Incorrect or already confirmed token,');
++    		return  $this->redirectToRoute('auth.signup');
++		}
++        $command = new SignUp\Confirm\ByToken\Command($token);
+ 
+         try {
+             $handler->handle($command);
+-            $this->addFlash('success', 'Email is successfully confirmed.');
+-            return $this->redirectToRoute('home');
++            return $guardHandler->authenticateUserAndHandleSuccess ($userProvider->loadUserByUsername($user->email), $request, $authenticator,'main');
+         } catch (\DomainException $e) {
+             $this->logger->error($e->getMessage(), ['exception' => $e]);
+             $this->addFlash('error', $e->getMessage());
+-            return $this->redirectToRoute('home');
++            return $this->redirectToRoute('auth.signup');
+         }
+     }
+ }
+Index: manager/src/ReadModel/User/DetailView.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/ReadModel/User/DetailView.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/ReadModel/User/DetailView.php	(date 1572995220664)
+@@ -8,6 +8,8 @@
+ {
+ 	public $id;
+ 	public $date;
++	public $first_name;
++	public $last_name;
+ 	public $email;
+ 	public $role;
+ 	public $status;
+Index: manager/src/Model/User/UseCase/Network/Detach/Command.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Network/Detach/Command.php	(date 1573078457922)
++++ manager/src/Model/User/UseCase/Network/Detach/Command.php	(date 1573078457922)
+@@ -0,0 +1,30 @@
++<?php
++
++declare(strict_types=1);
++namespace App\Model\User\UseCase\Network\Detach;
++
++
++class Command
++{
++	/**
++	 * @var string
++	 */
++	public $user;
++	/**
++	 * @var string
++	 */
++	public $network;
++	/**
++	 * @var string
++	 */
++	public $identity;
++
++	public function __construct(string $user, string $network, string $identity)
++	{
++
++		$this->user = $user;
++		$this->network = $network;
++		$this->identity = $identity;
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Controller/ProfileController.php
+===================================================================
+--- manager/src/Controller/ProfileController.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Controller/Profile/ShowController.php	(date 1572563374131)
+@@ -1,7 +1,7 @@
+ <?php
+ 
+ 
+-namespace App\Controller;
++namespace App\Controller\Profile;
+ 
+ 
+ use App\ReadModel\User\UserFetcher;
+@@ -9,7 +9,7 @@
+ use Symfony\Component\HttpFoundation\Response;
+ use Symfony\Component\Routing\Annotation\Route;
+ 
+-class ProfileController extends AbstractController
++class ShowController extends AbstractController
+ {
+ 
+ 	private $users;
+@@ -27,7 +27,7 @@
+ 
+ 	public function index():Response
+ 	{
+-		$user=$this->users->findDetail($this->getUser()->getId());
++		$user=$this->users->getDetail($this->getUser()->getId());
+ 		return $this->render('app/profile/show.html.twig',compact('user'));
+ 
+ 	}
+Index: manager/templates/base.html.twig
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/templates/base.html.twig	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/templates/base.html.twig	(date 1572998529183)
+@@ -24,7 +24,7 @@
+     <ul class="nav navbar-nav ml-auto mr-4">
+         <li class="nav-item dropdown">
+             <a class="nav-link nav-link" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false">
+-                {{ app.user.username }}
++                {{ app.user.display}}
+             </a>
+             <div class="dropdown-menu dropdown-menu-right">
+                 <div class="dropdown-header text-center">
+@@ -43,6 +43,12 @@
+                 <li class="nav-item">
+                     <a class="nav-link" href="{{ path('home') }}">
+                         <i class="nav-icon icon-speedometer"></i> Dashboard
++                    </a>
++                </li>
++                </li>
++                <li class="nav-item">
++                    <a class="nav-link" href="{{ path('profile') }}">
++                        <i class="nav-icon icon-user"></i> Profile
+                     </a>
+                 </li>
+             </ul>
+Index: manager/src/Model/User/UseCase/Network/Detach/Handler.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Network/Detach/Handler.php	(date 1573078457878)
++++ manager/src/Model/User/UseCase/Network/Detach/Handler.php	(date 1573078457878)
+@@ -0,0 +1,33 @@
++<?php
++
++
++namespace App\Model\User\UseCase\Network\Detach;
++
++
++use App\Model\Flusher;
++use App\Model\User\Entity\User\Id;
++use App\Model\User\Entity\User\UserRepository;
++
++class Handler
++{
++
++	private $users;
++
++	private $flusher;
++
++	public function __construct(UserRepository $users, Flusher $flusher)
++	{
++
++		$this->users = $users;
++		$this->flusher = $flusher;
++	}
++
++	public function handle(Command $command):void
++	{
++		$user=$this->users->get(new Id($command->user));
++		$user->detachNetwork($command->network,$command->identity);
++		$this->flusher->flush();
++
++	}
++
++}
+\ No newline at end of file
+Index: manager/templates/app/home.html.twig
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/templates/app/home.html.twig	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/templates/app/home.html.twig	(date 1572562897245)
+@@ -9,5 +9,5 @@
+ {% endblock %}
+ 
+ {% block body %}
+-    <h1>Hello!</h1>
++
+ {% endblock %}
+\ No newline at end of file
+Index: manager/src/Model/User/Service/ConfirmTokenSender.php
+===================================================================
+--- manager/src/Model/User/Service/ConfirmTokenSender.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Model/User/Service/SignUpConfirmTokenSender.php	(date 1572301544165)
+@@ -7,7 +7,7 @@
+ use App\Model\User\Entity\User\Email;
+ use Twig\Environment;
+ 
+-class ConfirmTokenSender
++class SignUpConfirmTokenSender
+ {
+     private $mailer;
+     private $twig;
+Index: manager/src/Controller/Profile/OAuth/DetachController.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Controller/Profile/OAuth/DetachController.php	(date 1573079046890)
++++ manager/src/Controller/Profile/OAuth/DetachController.php	(date 1573079046890)
+@@ -0,0 +1,55 @@
++<?php
++
++declare(strict_types=1);
++namespace App\Controller\Profile\OAuth;
++
++use App\Model\User\UseCase\Network\Detach\Command;
++use App\Model\User\UseCase\Network\Detach\Handler;
++use Psr\Log\LoggerInterface;
++use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
++use Symfony\Component\HttpFoundation\Request;
++use Symfony\Component\HttpFoundation\Response;
++use Symfony\Component\Routing\Annotation\Route;
++
++/**
++ * @Route("/profile/oauth")
++ */
++class DetachController extends AbstractController
++{
++
++	private $logger;
++
++	public function __construct(LoggerInterface $logger)
++	{
++
++		$this->logger = $logger;
++	}
++
++
++	/**
++	 * @Route("/detach/{network}/{identity}", name="profile.oauth.detach",methods={"DELETE"})
++	 * @param Request $request
++	 * @param string $network
++	 * @param string $identity
++	 * @param Handler $handler
++	 * @return Response
++	 */
++
++	public function detach(Request $request,string $network, string $identity,Handler $handler):Response
++	{
++		if (!$this->isCsrfTokenValid('delete',$request->request->get('token'))){
++			return $this->redirectToRoute('profile');
++		}
++		$command=new Command($this->getUser()->getId(),$network,$identity);
++		try{
++			$handler->handle($command);
++			return $this->redirectToRoute('profile');
++		} catch (\DomainException $e){
++			$this->logger->error($e->getMessage(),['exception'=>$e]);
++			$this->addFlash('error',$e->getMessage());
++			return $this->redirectToRoute('profile');
++		}
++
++	}
++
++}
+\ No newline at end of file
+Index: manager/templates/app/profile/name.html.twig
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/templates/app/profile/name.html.twig	(date 1572567331886)
++++ manager/templates/app/profile/name.html.twig	(date 1572567331886)
+@@ -0,0 +1,22 @@
++{% extends'base.html.twig' %}
++{% block title %}Profile{% endblock %}
++{% block breadcrumbs %}
++    <ol class="breadcrumb">
++        <li class="breadcrumb-item"><a href="{{ path('home') }}">Home</a></li>
++        <li class="breadcrumb-item"><a href="{{ path('profile') }}">Profile</a></li>
++        <li class="breadcrumb-item active">Name</li>
++    </ol>
++{% endblock %}
++
++{% block body %}
++
++    <div class="card">
++        <div class="card-body">
++            {{ form_start(form) }}
++            {{ form_widget(form) }}
++            <button type="submit" class="btn btn-success">Set Name</button>
++            {{ form_end(form) }}
++        </div>
++    </div>
++
++{% endblock %}
+\ No newline at end of file
+Index: manager/src/Model/User/UseCase/Name/Form.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Name/Form.php	(date 1572565487593)
++++ manager/src/Model/User/UseCase/Name/Form.php	(date 1572565487593)
+@@ -0,0 +1,25 @@
++<?php
++
++
++namespace App\Model\User\UseCase\Name;
++
++
++use Symfony\Component\Form\AbstractType;
++use Symfony\Component\Form\Extension\Core\Type;
++use Symfony\Component\Form\FormBuilderInterface;
++use Symfony\Component\OptionsResolver\OptionsResolver;
++
++class Form extends AbstractType
++{
++	public function buildForm(FormBuilderInterface $builder, array $options)
++	{
++		$builder->add('firstName',Type\TextType::class)->add('lastName',Type\TextType::class);
++	}
++
++	public function configureOptions(OptionsResolver $resolver)
++	{
++		$resolver->setDefaults(['data_class'=>Command::class]);
++
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Model/User/UseCase/Name/Handler.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Name/Handler.php	(date 1572565487549)
++++ manager/src/Model/User/UseCase/Name/Handler.php	(date 1572565487549)
+@@ -0,0 +1,34 @@
++<?php
++declare(strict_types=1);
++
++namespace App\Model\User\UseCase\Name;
++
++
++use App\Model\Flusher;
++use App\Model\User\Entity\User\Id;
++use App\Model\User\Entity\User\Name;
++use App\Model\User\Entity\User\UserRepository;
++
++class Handler
++{
++
++	private $users;
++
++	private $flusher;
++
++	public function __construct(UserRepository $users, Flusher $flusher)
++	{
++
++		$this->users = $users;
++		$this->flusher = $flusher;
++	}
++
++	public function handle(Command $command)
++	{
++		$user=$this->users->get(new Id($command->id));
++		$user->changeName(new Name($command->firstName,$command->lastName));
++		$this->flusher->flush();
++
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Model/User/Entity/User/Name.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/Entity/User/Name.php	(date 1572565487505)
++++ manager/src/Model/User/Entity/User/Name.php	(date 1572565487505)
+@@ -0,0 +1,46 @@
++<?php
++declare(strict_types=1);
++
++namespace App\Model\User\Entity\User;
++use Doctrine\ORM\Mapping as ORM;
++use Webmozart\Assert\Assert;
++
++/**
++ * @ORM\Embeddable()
++ */
++class Name
++{
++	/**
++	 * @var string
++	 * @ORM\Column(type="string")
++	 */
++	private $first;
++	/**
++	 * @var string
++	 * @ORM\Column(type="string")
++	 */
++	private $last;
++
++	public function __construct(string $first, string $last)
++	{
++		Assert::notEmpty($first);
++		Assert::notEmpty($last);
++
++		$this->first = $first;
++		$this->last = $last;
++	}
++
++
++	public function getFirst(): string
++	{
++		return $this->first;
++	}
++
++
++	public function getLast(): string
++	{
++		return $this->last;
++	}
++
++
++}
+\ No newline at end of file
+Index: manager/assets/css/app.scss
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/assets/css/app.scss	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/assets/css/app.scss	(date 1573076851494)
+@@ -15,6 +15,13 @@
+     }
+ }
+ 
++.table{
++    th,
++    td{
++        vertical-align: middle;
++    }
++ }
++
+ .footer {
+     background-color: #f5f5f5;
+ 
+Index: manager/src/Controller/Profile/NameController.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Controller/Profile/NameController.php	(date 1572566933694)
++++ manager/src/Controller/Profile/NameController.php	(date 1572566933694)
+@@ -0,0 +1,59 @@
++<?php
++declare(strict_types=1);
++
++namespace App\Controller\Profile;
++
++use App\Model\User\UseCase\Name\Command;
++use App\Model\User\UseCase\Name\Form;
++use App\Model\User\UseCase\Name\Handler;
++use App\ReadModel\User\UserFetcher;
++use Psr\Log\LoggerInterface;
++use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
++use Symfony\Component\HttpFoundation\Request;
++use Symfony\Component\HttpFoundation\Response;
++use Symfony\Component\Routing\Annotation\Route;
++
++/**
++ * @Route("/profile/name")
++ */
++class NameController extends AbstractController
++{
++
++	private $users;
++
++	private $logger;
++
++	public function __construct(UserFetcher $users, LoggerInterface $logger)
++	{
++
++		$this->users = $users;
++		$this->logger = $logger;
++	}
++	/**
++	 * @Route("",name="profile.name")
++	 * @param Request $request
++	 * @param Handler $handler
++	 * @return Response
++	 */
++	public function request(Request $request,Handler $handler):Response
++	{
++		$user=$this->users->getDetail($this->getUser()->getId());
++		$command=new Command($user->id);
++		$command->firstName=$user->first_name;
++		$command->lastName=$user->last_name;
++
++		$form=$this->createForm(Form::class,$command);
++		$form->handleRequest($request);
++		if ($form->isSubmitted() && $form->isValid()){
++			try{
++				$handler->handle($command);
++				return  $this->redirectToRoute('profile');
++			}catch (\DomainException $e){
++				$this->logger->error($e->getMessage(),['exception'=>$e]);
++				$this->addFlash(' error',$e->getMessage());
++			}
++		}
++		return $this->render('app/profile/name.html.twig', ['form'=>$form->createView(),]);
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Model/User/UseCase/Name/Command.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Name/Command.php	(date 1572564320558)
++++ manager/src/Model/User/UseCase/Name/Command.php	(date 1572564320558)
+@@ -0,0 +1,33 @@
++<?php
++declare(strict_types=1);
++
++namespace App\Model\User\UseCase\Name;
++use Symfony\Component\Validator\Constraints as Assert;
++
++class Command
++{
++	/**
++	 * @var string
++	 * @Assert\NotBlank()
++	 */
++	public $id;
++
++	/**
++	 * @var string
++	 * @Assert\NotBlank()
++	 */
++	public $firstName;
++	/**
++	 * @var string
++	 * @Assert\NotBlank()
++	 */
++	public $lastName;
++
++	public function __construct(string $id)
++	{
++
++		$this->id = $id;
++	}
++
++
++}
+\ No newline at end of file
+Index: manager/tests/Unit/Model/User/Entity/User/SignUp/RequestTest.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/tests/Unit/Model/User/Entity/User/SignUp/RequestTest.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/tests/Unit/Model/User/Entity/User/SignUp/RequestTest.php	(date 1572994980987)
+@@ -6,6 +6,7 @@
+ 
+ use App\Model\User\Entity\User\Email;
+ use App\Model\User\Entity\User\Id;
++use App\Model\User\Entity\User\Name;
+ use App\Model\User\Entity\User\User;
+ use PHPUnit\Framework\TestCase;
+ 
+@@ -16,6 +17,7 @@
+         $user = User::signUpByEmail(
+             $id = Id::next(),
+             $date = new \DateTimeImmutable(),
++            $name=new Name('First','Last'),
+             $email = new Email('test@app.test'),
+             $hash = 'hash',
+             $token = 'token'
+@@ -26,6 +28,7 @@
+ 
+         self::assertEquals($id, $user->getId());
+         self::assertEquals($date, $user->getDate());
++        self::assertEquals($name, $user->getName());
+         self::assertEquals($email, $user->getEmail());
+         self::assertEquals($hash, $user->getPasswordHash());
+         self::assertEquals($token, $user->getConfirmToken());
+Index: manager/src/Model/User/UseCase/Network/Auth/Command.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Network/Auth/Command.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Model/User/UseCase/Network/Auth/Command.php	(date 1572642943886)
+@@ -10,6 +10,14 @@
+      * @var string
+      */
+     public $network;
++	/**
++	 * @var string
++	 */
++	public $firstName;
++	/**
++	 * @var string
++	 */
++	public $lastName;
+     /**
+      * @var string
+      */
+Index: manager/src/Model/User/Entity/User/User.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/Entity/User/User.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Model/User/Entity/User/User.php	(date 1573080115679)
+@@ -36,6 +36,7 @@
+      * @ORM\Column(type="user_user_email", nullable=true)
+      */
+     private $email;
++
+     /**
+      * @var string|null
+      * @ORM\Column(type="string", name="password_hash", nullable=true)
+@@ -46,6 +47,23 @@
+      * @ORM\Column(type="string", name="confirm_token", nullable=true)
+      */
+     private $confirmToken;
++	/**
++	 * @var Name
++	 * @ORM\Embedded(class="Name")
++	 */
++    private $name;
++
++
++	/**
++	 * @var Email|null
++	 * @ORM\Column(type="user_user_email", name="new_email",nullable=true)
++	 */
++	private $newEmail;
++	/**
++	 * @var string|null
++	 * @ORM\Column(type="string",name="new_email_token", nullable=true)
++	 */
++	private $newEmailToken;
+     /**
+      * @var ResetToken|null
+      * @ORM\Embedded(class="ResetToken", columnPrefix="reset_token_")
+@@ -67,17 +85,19 @@
+      */
+     private $networks;
+ 
+-    private function __construct(Id $id, \DateTimeImmutable $date)
++    private function __construct(Id $id, \DateTimeImmutable $date, Name $name)
+     {
+         $this->id = $id;
+         $this->date = $date;
++        $this->name = $name;
+         $this->role = Role::user();
+         $this->networks = new ArrayCollection();
++
+     }
+ 
+-    public static function signUpByEmail(Id $id, \DateTimeImmutable $date, Email $email, string $hash, string $token): self
++    public static function signUpByEmail(Id $id, \DateTimeImmutable $date, Name $name,Email $email, string $hash, string $token): self
+     {
+-        $user = new self($id, $date);
++        $user = new self($id, $date, $name);
+         $user->email = $email;
+         $user->passwordHash = $hash;
+         $user->confirmToken = $token;
+@@ -95,7 +115,7 @@
+         $this->confirmToken = null;
+     }
+ 
+-    public static function signUpByNetwork(Id $id, \DateTimeImmutable $date, string $network, string $identity): self
++    public static function signUpByNetwork(Id $id, \DateTimeImmutable $date,Name $name, string $network, string $identity): self
+     {
+         $user = new self($id, $date);
+         $user->attachNetwork($network, $identity);
+@@ -103,7 +123,7 @@
+         return $user;
+     }
+ 
+-    private function attachNetwork(string $network, string $identity): void
++    public function attachNetwork(string $network, string $identity): void
+     {
+         foreach ($this->networks as $existing) {
+             if ($existing->isForNetwork($network)) {
+@@ -113,6 +133,21 @@
+         $this->networks->add(new Network($this, $network, $identity));
+     }
+ 
++	public function detachNetwork(string $network,string $identity):void
++	{
++		foreach ($this->networks as $existing){
++			if ($existing->isFor($network,$identity)){
++				if (!$this->email && $this->networks->count()===1){
++					throw  new \DomainException('Unable to detach the last identity.');
++				}
++				$this->networks->removeElement($existing);
++				return;
++			}
++		}
++		throw new \DomainException('Network is not attached.');
++
++    }
++
+     public function requestPasswordReset(ResetToken $token, \DateTimeImmutable $date): void
+     {
+         if (!$this->isActive()) {
+@@ -139,6 +174,37 @@
+         $this->resetToken = null;
+     }
+ 
++    public function requestEmailChanging(Email $email,string $token)
++	{
++		if (!$this->isActive()){
++			throw new \DomainException('User is not active,');
++		}
++		if ($this->email && $this->email->isEqual($email)){
++			throw new \DomainException('Email is already same.');
++		}
++		$this->newEmail=$email;
++		$this->newEmailToken=$token;
++	}
++
++	public function confirmEmailChanging(string $token):void
++	{if (!$this->newEmailToken){
++		throw  new \DomainException('Changing is not requested.');
++		}
++		if ($this->newEmailToken !==$token){
++			throw new \DomainException('Incorrect changing token.');
++		};
++		$this->email=$this->newEmail;
++		$this->newEmail=null;
++		$this->newEmailToken=null;
++
++	 }
++
++	public function changeName(Name $name)
++	{
++		$this->name=$name;
++
++	 }
++
+     public function changeRole(Role $role): void
+     {
+         if ($this->role->isEqual($role)) {
+@@ -171,6 +237,10 @@
+     {
+         return $this->date;
+     }
++     public function getName(): Name
++	{
++	return $this->name;
++}
+ 
+     public function getEmail(): ?Email
+     {
+@@ -191,6 +261,15 @@
+     {
+         return $this->resetToken;
+     }
++	public function getNewEmail(): ?Email
++	{
++		return $this->newEmail;
++	}
++
++	public function getNewEmailToken(): ?string
++	{
++		return $this->newEmailToken;
++	}
+ 
+     public function getRole(): Role
+     {
+Index: manager/tests/Unit/Model/User/Entity/User/Network/AuthTest.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/tests/Unit/Model/User/Entity/User/Network/AuthTest.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/tests/Unit/Model/User/Entity/User/Network/AuthTest.php	(date 1572994980859)
+@@ -5,6 +5,7 @@
+ namespace App\Tests\Unit\Model\User\Entity\User\Network;
+ 
+ use App\Model\User\Entity\User\Id;
++use App\Model\User\Entity\User\Name;
+ use App\Model\User\Entity\User\Network;
+ use App\Model\User\Entity\User\User;
+ use PHPUnit\Framework\TestCase;
+@@ -16,6 +17,7 @@
+         $user = User::signUpByNetwork(
+             $id = Id::next(),
+             $date = new \DateTimeImmutable(),
++            $name=new Name('First','Last'),
+             $network = 'vk',
+             $identity = '0000001'
+         );
+@@ -24,6 +26,7 @@
+ 
+         self::assertEquals($id, $user->getId());
+         self::assertEquals($date, $user->getDate());
++        self::assertEquals($name, $user->getName());
+ 
+         self::assertCount(1, $networks = $user->getNetworks());
+         self::assertInstanceOf(Network::class, $first = reset($networks));
+Index: manager/src/Model/User/Entity/User/Network.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/Entity/User/Network.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Model/User/Entity/User/Network.php	(date 1573079046938)
+@@ -46,6 +46,12 @@
+         $this->identity = $identity;
+     }
+ 
++	public function isFor(string  $network,string $identity):bool
++	{
++		return $this->network===$network && $this->identity===$identity;
++
++    }
++
+     public function isForNetwork(string $network): bool
+     {
+         return $this->network === $network;
+Index: manager/src/DataFixtures/UserFixture.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/DataFixtures/UserFixture.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/DataFixtures/UserFixture.php	(date 1572992638611)
+@@ -3,6 +3,7 @@
+ namespace App\DataFixtures;
+ 
+ use App\Model\User\Entity\User\Email;
++use App\Model\User\Entity\User\Name;
+ use App\Model\User\Entity\User\Role;
+ use App\Model\User\Entity\User\User;
+ use App\Model\User\Entity\User\Id;
+@@ -26,6 +27,7 @@
+         $user = User::signUpByEmail(
+             Id::next(),
+             new \DateTimeImmutable(),
++            new Name('James','Bond'),
+             new Email('admin@app.test'),
+             $hash,
+             'token'
+Index: manager/src/Model/User/UseCase/SignUp/Request/Command.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/SignUp/Request/Command.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Model/User/UseCase/SignUp/Request/Command.php	(date 1572642336570)
+@@ -14,6 +14,18 @@
+      * @Assert\Email()
+      */
+     public $email;
++	/**
++	 * @var string
++	 * @Assert\NotBlank()
++	 * @Assert\Email()
++	 */
++	public $firstName;
++	/**
++	 * @var string
++	 * @Assert\NotBlank()
++	 * @Assert\Email()
++	 */
++	public $lastName;
+     /**
+      * @var string
+      * @Assert\NotBlank()
+Index: manager/src/Model/User/UseCase/SignUp/Request/Handler.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/SignUp/Request/Handler.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Model/User/UseCase/SignUp/Request/Handler.php	(date 1572642413927)
+@@ -7,10 +7,11 @@
+ use App\Model\Flusher;
+ use App\Model\User\Entity\User\Email;
+ use App\Model\User\Entity\User\Id;
++use App\Model\User\Entity\User\Name;
+ use App\Model\User\Entity\User\User;
+ use App\Model\User\Entity\User\UserRepository;
+ use App\Model\User\Service\SignUpConfirmTokenizer;
+-use App\Model\User\Service\ConfirmTokenSender;
++use App\Model\User\Service\SignUpConfirmTokenSender;
+ use App\Model\User\Service\PasswordHasher;
+ 
+ class Handler
+@@ -22,11 +23,11 @@
+     private $flusher;
+ 
+     public function __construct(
+-        UserRepository $users,
+-        PasswordHasher $hasher,
+-        SignUpConfirmTokenizer $tokenizer,
+-        ConfirmTokenSender $sender,
+-        Flusher $flusher
++		UserRepository $users,
++		PasswordHasher $hasher,
++		SignUpConfirmTokenizer $tokenizer,
++		SignUpConfirmTokenSender $sender,
++		Flusher $flusher
+     )
+     {
+         $this->users = $users;
+@@ -47,6 +48,7 @@
+         $user = User::signUpByEmail(
+             Id::next(),
+             new \DateTimeImmutable(),
++            new Name($command->firstName,$command->lastName),
+             $email,
+             $this->hasher->hash($command->password),
+             $token = $this->tokenizer->generate()
+Index: manager/src/Controller/Profile/OAuth/FacebookController.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Controller/Profile/OAuth/FacebookController.php	(date 1572562438128)
++++ manager/src/Controller/Profile/OAuth/FacebookController.php	(date 1572562438128)
+@@ -0,0 +1,60 @@
++<?php
++declare(strict_types=1);
++
++namespace App\Controller\Profile\OAuth;
++
++use App\Model\User\UseCase\Network\Attach\Command;
++use App\Model\User\UseCase\Network\Attach\Handler;
++use KnpU\OAuth2ClientBundle\Client\ClientRegistry;
++use Psr\Log\LoggerInterface;
++use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
++use Symfony\Component\HttpFoundation\Response;
++use Symfony\Component\Routing\Annotation\Route;
++
++/**
++ * @Route("/profile/oauth/facebook")
++ */
++class FacebookController extends AbstractController
++{
++
++	private $logger;
++
++	public function __construct(LoggerInterface $logger)
++	{
++
++		$this->logger = $logger;
++	}
++	/**
++	 * @Route("/attach", name="profile.oauth.facebook")
++	 * @param ClientRegistry $clientRegistry
++	 * @return Response
++	 */
++	public function connect(ClientRegistry $clientRegistry):Response
++	{
++		return  $clientRegistry->getClient('facebook_attach')->redirect(['public_profile']);
++
++	}
++
++	/**
++	 * @Route("/check",name="profile.oauth.facebook_check")
++	 * @param ClientRegistry $clientRegictry
++	 * @param Handler $handler
++	 * @return Response
++	 */
++	public function check(ClientRegistry $clientRegistry, Handler $handler)
++	{
++		$client=$clientRegistry->getClient('facebook_attach');
++		$command=new Command($this->getUser()->getId(),'facebook',$client->fetchUser()->getId());
++
++		try{
++			$handler->handle($command);
++			$this->addFlash('success','Facebook is successfully attached.');
++			return  $this->redirectToRoute('profile');
++		} catch (\DomainException $e){
++			$this->logger->error($e->getMessage(),['exception'=>$e]);
++			$this->addFlash('error', $e->getMessage());
++			return $this->redirectToRoute('profile');
++		}
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Model/User/UseCase/Network/Attach/Command.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Network/Attach/Command.php	(date 1572560030476)
++++ manager/src/Model/User/UseCase/Network/Attach/Command.php	(date 1572560030476)
+@@ -0,0 +1,30 @@
++<?php
++declare(strict_types=1);
++
++namespace App\Model\User\UseCase\Network\Attach;
++
++
++class Command
++{
++	/**
++	 * @var string
++	 */
++	public $user;
++	/**
++	 * @var string
++	 */
++	public $network;
++	/**
++	 * @var string
++	 */
++	public $identity;
++
++	public function __construct(string  $user, string  $network, string $identity)
++	{
++
++		$this->user = $user;
++		$this->network = $network;
++		$this->identity = $identity;
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Model/User/UseCase/Network/Attach/Handler.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Network/Attach/Handler.php	(date 1572560403635)
++++ manager/src/Model/User/UseCase/Network/Attach/Handler.php	(date 1572560403635)
+@@ -0,0 +1,36 @@
++<?php
++declare(strict_types=1);
++
++namespace App\Model\User\UseCase\Network\Attach;
++
++
++use App\Model\Flusher;
++use App\Model\User\Entity\User\Id;
++use App\Model\User\Entity\User\UserRepository;
++
++class Handler
++{
++
++	private $users;
++
++	private $flusher;
++
++	public function __construct(UserRepository $users, Flusher $flusher)
++	{
++
++		$this->users = $users;
++		$this->flusher = $flusher;
++	}
++
++	public function handle(Command $command)
++	{
++		if ($this->users->hasByNetworkIdentity($command->network,$command->identity)){
++			throw  new \DomainException('Profile is already in use.');
++		}
++		$user=$this->users->get(new Id($command->user));
++		$user->attachNetwork($command->network,$command->identity);
++		$this->flusher->flush();
++
++	}
++
++}
+\ No newline at end of file
+Index: manager/tests/Unit/Model/User/Entity/User/Email/ConfirmTest.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/tests/Unit/Model/User/Entity/User/Email/ConfirmTest.php	(date 1572473035857)
++++ manager/tests/Unit/Model/User/Entity/User/Email/ConfirmTest.php	(date 1572473035857)
+@@ -0,0 +1,45 @@
++<?php
++
++
++namespace App\Tests\Unit\Model\User\Entity\User\Email;
++
++
++use App\Model\User\Entity\User\Email;
++use App\Tests\Builder\User\UserBuilder;
++use PHPUnit\Framework\TestCase;
++
++class ConfirmTest extends TestCase
++{
++	public function testSuccess()
++	{
++		$user=(new UserBuilder())->viaEmail()->confirmed()->build();
++		$user->requestEmailChanging($email=new Email('new@app.test'),$token='token');
++		$user->confirmEmailChanging($token);
++
++		self::assertEquals($email,$user->getEmail());
++		self::assertNull($user->getNewEmailToken());
++		self::assertNull($user->getNewEmail());
++
++
++	}
++
++	public function testNotRequest()
++	{
++		$user=(new UserBuilder())->viaEmail()->confirmed()->build();
++		$this->expectExceptionMessage('Changing is not requested.');
++		$user->confirmEmailChanging('token');
++
++	}
++
++	public function testIncorrect()
++	{
++		$user=(new UserBuilder())->viaEmail()->confirmed()->build();
++
++		$user->requestEmailChanging($email=new Email('new@app.test'),'token');
++		$this->expectExceptionMessage('Incorrect changing token.');
++		$user->confirmEmailChanging('incorrect_token');
++
++
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Controller/Profile/EmailController.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Controller/Profile/EmailController.php	(date 1572476289303)
++++ manager/src/Controller/Profile/EmailController.php	(date 1572476289303)
+@@ -0,0 +1,78 @@
++<?php
++
++
++namespace App\Controller\Profile;
++
++
++use App\Model\User\UseCase\Email\Request\Command;
++use App\Model\User\UseCase\Email\Request\Form;
++use App\Model\User\UseCase\Email\Request\Handler;
++use Psr\Log\LoggerInterface;
++use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
++use Symfony\Component\HttpFoundation\Request;
++use Symfony\Component\HttpFoundation\Response;
++use Symfony\Component\Routing\Annotation\Route;
++
++/**
++ * @Route("/profile/email")
++ */
++class EmailController extends AbstractController
++{
++	/**
++	 * @var LoggerInterface
++	 */
++	private $logger;
++
++	public function __construct(LoggerInterface $logger)
++	{
++
++		$this->logger = $logger;
++	}
++	/**
++	 * @Route("", name="profile.email")
++	 * @param Request $request
++	 * @param Email\Request\Handler $handler
++	 * @return Response
++	 */
++	public function request(Request $request, Handler $handler):Response
++	{
++		$command=new Command($this->getUser()->getId());
++		$form=$this->createForm(Form::class,$command);
++		$form->handleRequest($request);
++		if ($form->isSubmitted() && $form->isValid()){
++			try{
++				$handler->handle($command);
++				$this->addFlash('success','Check your email.');
++				return $this->redirectToRoute('profile');
++			} catch (\DomainException $e){
++				$this->logger->error($e->getMessage(),['exception'=>$e]);
++				$this->addFlash('error',$e->getMessage());
++			}
++		}
++		return  $this->render('app/profile/email.html.twig',['form'=>$form->createView(),]);
++
++
++	}
++	/**
++	 * @Route("/{token}", name="profile.email.confirm")
++	 * @param string $token
++	 * @param Email\Confirm\Handler $handler
++	 * @return Response
++	 */
++
++	public function confirm(string $token, \App\Model\User\UseCase\Email\Confirm\Handler $handler):Response
++	{
++		$command=new \App\Model\User\UseCase\Email\Confirm\Command($this->getUser()->getId(),$token);
++		try {
++			$handler->handle($command);
++			$this->addFlash('success', 'Email is successfully changed.');
++			return $this->redirectToRoute('profile');
++		} catch (\DomainException $e) {
++			$this->logger->error($e->getMessage(), ['exception' => $e]);
++			$this->addFlash('error', $e->getMessage());
++			return $this->redirectToRoute('profile');
++		}
++
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Migrations/Version20191030221755.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Migrations/Version20191030221755.php	(date 1572473875305)
++++ manager/src/Migrations/Version20191030221755.php	(date 1572473875305)
+@@ -0,0 +1,39 @@
++<?php
++
++declare(strict_types=1);
++
++namespace DoctrineMigrations;
++
++use Doctrine\DBAL\Schema\Schema;
++use Doctrine\Migrations\AbstractMigration;
++
++/**
++ * Auto-generated Migration: Please modify to your needs!
++ */
++final class Version20191030221755 extends AbstractMigration
++{
++    public function getDescription() : string
++    {
++        return '';
++    }
++
++    public function up(Schema $schema) : void
++    {
++        // this up() migration is auto-generated, please modify it to your needs
++        $this->abortIf($this->connection->getDatabasePlatform()->getName() !== 'postgresql', 'Migration can only be executed safely on \'postgresql\'.');
++
++        $this->addSql('ALTER TABLE user_users ADD new_email VARCHAR(255) DEFAULT NULL');
++        $this->addSql('ALTER TABLE user_users ADD new_email_token VARCHAR(255) DEFAULT NULL');
++        $this->addSql('COMMENT ON COLUMN user_users.new_email IS \'(DC2Type:user_user_email)\'');
++    }
++
++    public function down(Schema $schema) : void
++    {
++        // this down() migration is auto-generated, please modify it to your needs
++        $this->abortIf($this->connection->getDatabasePlatform()->getName() !== 'postgresql', 'Migration can only be executed safely on \'postgresql\'.');
++
++        $this->addSql('CREATE SCHEMA public');
++        $this->addSql('ALTER TABLE user_users DROP new_email');
++        $this->addSql('ALTER TABLE user_users DROP new_email_token');
++    }
++}
+Index: manager/src/ReadModel/User/AuthView.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/ReadModel/User/AuthView.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/ReadModel/User/AuthView.php	(date 1572998529287)
+@@ -9,6 +9,7 @@
+     public $id;
+     public $email;
+     public $password_hash;
++    public $name;
+     public $role;
+     public $status;
+ }
+Index: manager/tests/Unit/Model/User/Entity/User/Email/RequestTest.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/tests/Unit/Model/User/Entity/User/Email/RequestTest.php	(date 1572471425450)
++++ manager/tests/Unit/Model/User/Entity/User/Email/RequestTest.php	(date 1572471425450)
+@@ -0,0 +1,38 @@
++<?php
++
++
++namespace App\Tests\Unit\Model\User\Entity\User\Email;
++use App\Model\User\Entity\User\Email;
++use App\Tests\Builder\User\UserBuilder;
++use PHPUnit\Framework\TestCase;
++
++class RequestTest extends TestCase
++{
++	public function testSuccess()
++	{
++		$user=(new UserBuilder())->viaEmail()->confirmed()->build();
++		$user->requestEmailChanging($email=new Email('new@app.test'),$token='token');
++		self::assertEquals($email,$user->getNewEmail());
++		self::assertEquals($token,$user->getNewEmailToken());
++
++	}
++
++	public function testSame()
++
++	{
++		$user=(new UserBuilder())->viaEmail($email=new Email('new@app.test'))->confirmed()->build();
++		$this->expectExceptionMessage('Email is already same.');
++		$user->requestEmailChanging($email,'token');
++
++	}
++
++	public function nestNotCofirmed()
++	{
++		$user=(new UserBuilder())->viaEmail()->build();
++		$this->expectExceptionMessage('User is not active.');
++		$user->requestEmailChanging(new Email('new@app.test'),'token');
++
++	}
++
++
++}
+\ No newline at end of file
+Index: manager/src/Model/User/Service/NewEmailConfirmTokenSender.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/Service/NewEmailConfirmTokenSender.php	(date 1572477066710)
++++ manager/src/Model/User/Service/NewEmailConfirmTokenSender.php	(date 1572477066710)
+@@ -0,0 +1,39 @@
++<?php
++
++
++namespace App\Model\User\Service;
++
++
++use App\Model\User\Entity\User\Email;
++use Twig\Environment;
++
++class NewEmailConfirmTokenSender
++{
++	/**
++	 * @var \Swift_Mailer
++	 */
++	private $mailer;
++	/**
++	 * @var Environment
++	 */
++	private $twig;
++
++	public function __construct(\Swift_Mailer $mailer, Environment $twig)
++	{
++
++		$this->mailer = $mailer;
++		$this->twig = $twig;
++	}
++
++	public function send(Email $email, string $token):void
++	{
++		$message=(new \Swift_Message('Email Confirmation'))
++			->setTo($email->getValue())
++			->setBody($this->twig->render('mail/user/email.html.twig',['token'=>$token]),'text/html');
++		if (!$this->mailer->send($message)){
++			throw new \RuntimeException('Unable te send message');
++		}
++
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/ReadModel/User/UserFetcher.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/ReadModel/User/UserFetcher.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/ReadModel/User/UserFetcher.php	(date 1572998659042)
+@@ -33,6 +33,7 @@
+ 				'id',
+ 				'email',
+ 				'password_hash',
++				'TRIM(CONCAT(name_first, \' \',name_last)) AS name',
+ 				'role',
+ 				'status'
+ 			)
+@@ -53,6 +54,7 @@
+ 				'u.id',
+ 				'u.email',
+ 				'u.password_hash',
++				'TRIM(CONCAT(u,name_first, \' \',u.name_last)) AS name',
+ 				'u.role',
+ 				'u.status'
+ 			)
+@@ -87,12 +89,34 @@
+ 
+ 		return $result ?: null;
+ 	}
++
++	public function findBySignUpConfirmToken(string  $token)
++	{
++		$stmt=$this->connection->createQueryBuilder()
++			->select(
++				'id',
++				'email',
++				'role',
++				'status'
++			)
++			->from('user_users')
++			->where('confirm_token=:token')
++			->setParameter(':token',$token)
++			->execute();
++		$stmt->setFetchMode(FetchMode::CUSTOM_OBJECT,ShortView::class);
++		$result=$stmt->fetch();
++		return $result ?: null;
++
++	}
++
+ 	public function findDetail(string $id): ?DetailView
+ 	{
+ 		$stmt = $this->connection->createQueryBuilder()
+ 			->select(
+ 				'id',
+ 				'date',
++				'name_first first_name',
++				'name_last last_name',
+ 				'email',
+ 				'role',
+ 				'status'
+@@ -121,4 +145,12 @@
+ 		return $view;
+ 	}
+ 
++	public function getDetail(string $id):DetailView
++	{
++		if (!$detail=$this->findDetail($id)){
++			throw new \LogicException('User os not found.');
++		}
++		return  $detail;
++	}
++
+ }
+Index: manager/src/Migrations/Version20191105222700.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Migrations/Version20191105222700.php	(date 1572993235588)
++++ manager/src/Migrations/Version20191105222700.php	(date 1572993235588)
+@@ -0,0 +1,43 @@
++<?php
++
++declare(strict_types=1);
++
++namespace DoctrineMigrations;
++
++use Doctrine\DBAL\Schema\Schema;
++use Doctrine\Migrations\AbstractMigration;
++
++/**
++ * Auto-generated Migration: Please modify to your needs!
++ */
++final class Version20191105222700 extends AbstractMigration
++{
++    public function getDescription() : string
++    {
++        return '';
++    }
++
++    public function up(Schema $schema) : void
++    {
++        // this up() migration is auto-generated, please modify it to your needs
++        $this->abortIf($this->connection->getDatabasePlatform()->getName() !== 'postgresql', 'Migration can only be executed safely on \'postgresql\'.');
++
++        $this->addSql('ALTER TABLE user_users ADD name_first VARCHAR(255) DEFAULT NULL');
++        $this->addSql('ALTER TABLE user_users ADD name_last VARCHAR(255) DEFAULT NULL');
++		$this->addSql('UPDATE user_users SET name_first =\'\'');
++		$this->addSql('UPDATE user_users SET name_last =\'\'');
++
++		$this->addSql('ALTER TABLE user_users ALTER name_first SET NOT NULL');
++		$this->addSql('ALTER TABLE user_users ALTER name_last SET NOT NULL');
++    }
++
++    public function down(Schema $schema) : void
++    {
++        // this down() migration is auto-generated, please modify it to your needs
++        $this->abortIf($this->connection->getDatabasePlatform()->getName() !== 'postgresql', 'Migration can only be executed safely on \'postgresql\'.');
++
++        $this->addSql('CREATE SCHEMA public');
++        $this->addSql('ALTER TABLE user_users DROP name_first');
++        $this->addSql('ALTER TABLE user_users DROP name_last');
++    }
++}
+Index: manager/src/Model/User/Entity/User/Email.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/Entity/User/Email.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Model/User/Entity/User/Email.php	(date 1572391211888)
+@@ -23,4 +23,10 @@
+     {
+         return $this->value;
+     }
++
++	public function isEqual(self $other):bool
++	{
++		return $this->getValue()===$other->getValue();
++
++    }
+ }
+\ No newline at end of file
+Index: manager/src/Model/User/Service/NewEmailConfirmTokenizer.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/Service/NewEmailConfirmTokenizer.php	(date 1572388394891)
++++ manager/src/Model/User/Service/NewEmailConfirmTokenizer.php	(date 1572388394891)
+@@ -0,0 +1,17 @@
++<?php
++
++
++namespace App\Model\User\Service;
++
++
++use Ramsey\Uuid\Uuid;
++
++class NewEmailConfirmTokenizer
++{
++	public function generate():string
++	{
++		return Uuid::uuid4()->toString();
++
++	}
++
++}
+\ No newline at end of file
+Index: manager/config/packages/knpu_oauth2_client.yaml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/config/packages/knpu_oauth2_client.yaml	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/config/packages/knpu_oauth2_client.yaml	(date 1572562744478)
+@@ -7,3 +7,10 @@
+         redirect_route: oauth.facebook_check
+         redirect_params: {}
+         graph_api_version: v2.12
++      facebook_attach:
++        type: facebook
++        client_id: '%env(OAUTH_FACEBOOK_ID)%'
++        client_secret: '%env(OAUTH_FACEBOOK_SECRET)%'
++        redirect_route: profile.oauth.facebook_check
++        redirect_params: {}
++        graph_api_version: v2.12
+Index: manager/src/Model/Flusher.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/Flusher.php	(date 1570056193131)
++++ manager/src/Model/Flusher.php	(date 1570056193131)
+@@ -0,0 +1,22 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Model;
++
++use Doctrine\ORM\EntityManagerInterface;
++
++class Flusher
++{
++    private $em;
++
++    public function __construct(EntityManagerInterface $em)
++    {
++        $this->em = $em;
++    }
++
++    public function flush(): void
++    {
++        $this->em->flush();
++    }
++}
+Index: manager/src/Security/UserProvider.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Security/UserProvider.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Security/UserProvider.php	(date 1572998529383)
+@@ -60,8 +60,9 @@
+ 	{
+ 		return new UserIdentity(
+ 			$user->id,
+-			$username,
++			$user->email ?: $username,
+ 			$user->password_hash ?: '',
++			$user->name ?: $username,
+ 			$user->role,
+ 			$user->status
+ 		);
+Index: manager/templates/app/profile/email.html.twig
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/templates/app/profile/email.html.twig	(date 1572302296316)
++++ manager/templates/app/profile/email.html.twig	(date 1572302296316)
+@@ -0,0 +1,24 @@
++{% extends 'base.html.twig' %}
++
++{% block title %}Profile{% endblock %}
++
++{% block breadcrumbs %}
++    <ol class="breadcrumb">
++        <li class="breadcrumb-item"><a href="{{ path('home') }}">Home</a></li>
++        <li class="breadcrumb-item"><a href="{{ path('profile') }}">Profile</a></li>
++        <li class="breadcrumb-item active">Email</li>
++    </ol>
++{% endblock %}
++
++{% block body %}
++
++    <div class="card">
++        <div class="card-body">
++            {{ form_start(form) }}
++            {{ form_widget(form) }}
++            <button type="submit" class="btn btn-success">Set Email</button>
++            {{ form_end(form) }}
++        </div>
++    </div>
++
++{% endblock %}
+\ No newline at end of file
+Index: manager/tests/Finctional/HomeTest.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/tests/Finctional/HomeTest.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/tests/Finctional/HomeTest.php	(date 1572562897201)
+@@ -29,7 +29,7 @@
+ 		$crawler = $client->request('GET', '/');
+ 
+ 		$this->assertSame(200, $client->getResponse()->getStatusCode());
+-		$this->assertContains('Hello', $crawler->filter('h1')->text());
++		$this->assertContains('Home', $crawler->filter('title')->text());
+ 
+ 	}
+ 
+Index: manager/src/Model/User/Service/SignUpConfirmTokenizer.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/Service/SignUpConfirmTokenizer.php	(date 1569363526419)
++++ manager/src/Model/User/Service/SignUpConfirmTokenizer.php	(date 1569363526419)
+@@ -0,0 +1,15 @@
++<?php
++
++declare(strict_types=1);
++
++namespace App\Model\User\Service;
++
++use Ramsey\Uuid\Uuid;
++
++class SignUpConfirmTokenizer
++{
++    public function generate(): string
++    {
++        return Uuid::uuid4()->toString();
++    }
++}
+Index: manager/src/Migrations/Version20190413104318.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Migrations/Version20190413104318.php	(date 1569976072338)
++++ manager/src/Migrations/Version20190413104318.php	(date 1569976072338)
+@@ -0,0 +1,49 @@
++<?php
++
++declare(strict_types=1);
++
++namespace DoctrineMigrations;
++
++use Doctrine\DBAL\Schema\Schema;
++use Doctrine\Migrations\AbstractMigration;
++
++/**
++ * Auto-generated Migration: Please modify to your needs!
++ */
++final class Version20190413104318 extends AbstractMigration
++{
++    public function getDescription() : string
++    {
++        return '';
++    }
++
++    public function up(Schema $schema) : void
++    {
++        // this up() migration is auto-generated, please modify it to your needs
++        $this->abortIf($this->connection->getDatabasePlatform()->getName() !== 'postgresql', 'Migration can only be executed safely on \'postgresql\'.');
++
++        $this->addSql('CREATE TABLE user_user_networks (id UUID NOT NULL, user_id UUID NOT NULL, network VARCHAR(32) DEFAULT NULL, identity VARCHAR(32) DEFAULT NULL, PRIMARY KEY(id))');
++        $this->addSql('CREATE INDEX IDX_D7BAFD7BA76ED395 ON user_user_networks (user_id)');
++        $this->addSql('CREATE UNIQUE INDEX UNIQ_D7BAFD7B608487BC6A95E9C4 ON user_user_networks (network, identity)');
++        $this->addSql('COMMENT ON COLUMN user_user_networks.user_id IS \'(DC2Type:user_user_id)\'');
++        $this->addSql('CREATE TABLE user_users (id UUID NOT NULL, date TIMESTAMP(0) WITHOUT TIME ZONE NOT NULL, email VARCHAR(255) DEFAULT NULL, password_hash VARCHAR(255) DEFAULT NULL, confirm_token VARCHAR(255) DEFAULT NULL, status VARCHAR(16) NOT NULL, role VARCHAR(16) NOT NULL, reset_token_token VARCHAR(255) DEFAULT NULL, reset_token_expires TIMESTAMP(0) WITHOUT TIME ZONE DEFAULT NULL, PRIMARY KEY(id))');
++        $this->addSql('CREATE UNIQUE INDEX UNIQ_F6415EB1E7927C74 ON user_users (email)');
++        $this->addSql('CREATE UNIQUE INDEX UNIQ_F6415EB186EC69F0 ON user_users (reset_token_token)');
++        $this->addSql('COMMENT ON COLUMN user_users.id IS \'(DC2Type:user_user_id)\'');
++        $this->addSql('COMMENT ON COLUMN user_users.date IS \'(DC2Type:datetime_immutable)\'');
++        $this->addSql('COMMENT ON COLUMN user_users.email IS \'(DC2Type:user_user_email)\'');
++        $this->addSql('COMMENT ON COLUMN user_users.role IS \'(DC2Type:user_user_role)\'');
++        $this->addSql('COMMENT ON COLUMN user_users.reset_token_expires IS \'(DC2Type:datetime_immutable)\'');
++        $this->addSql('ALTER TABLE user_user_networks ADD CONSTRAINT FK_D7BAFD7BA76ED395 FOREIGN KEY (user_id) REFERENCES user_users (id) ON DELETE CASCADE NOT DEFERRABLE INITIALLY IMMEDIATE');
++    }
++
++    public function down(Schema $schema) : void
++    {
++        // this down() migration is auto-generated, please modify it to your needs
++        $this->abortIf($this->connection->getDatabasePlatform()->getName() !== 'postgresql', 'Migration can only be executed safely on \'postgresql\'.');
++
++        $this->addSql('ALTER TABLE user_user_networks DROP CONSTRAINT FK_D7BAFD7BA76ED395');
++        $this->addSql('DROP TABLE user_user_networks');
++        $this->addSql('DROP TABLE user_users');
++    }
++}
+Index: manager/templates/mail/user/email.html.twig
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/templates/mail/user/email.html.twig	(date 1572392367943)
++++ manager/templates/mail/user/email.html.twig	(date 1572392367943)
+@@ -0,0 +1,6 @@
++{% extends'mail.html.twig' %}
++{% block body %}
++<p>Email Confirm Link</p>
++{% set url=url('profile.email.confirm',{'token':token})%}
++<p><a href="{{ url }}">{{ url }}</a> </p>
++{% endblock %}
+\ No newline at end of file
+Index: manager/src/Security/UserIdentity.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Security/UserIdentity.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Security/UserIdentity.php	(date 1572998529243)
+@@ -13,6 +13,7 @@
+     private $id;
+     private $username;
+     private $password;
++    private $display;
+     private $role;
+     private $status;
+ 
+@@ -20,6 +21,7 @@
+         string $id,
+         string $username,
+         string $password,
++        string $display,
+         string $role,
+         string $status
+     )
+@@ -27,10 +29,12 @@
+         $this->id = $id;
+         $this->username = $username;
+         $this->password = $password;
++        $this->display=$display;
+         $this->role = $role;
+         $this->status = $status;
+     }
+ 
++
+     public function getId(): string
+     {
+         return $this->id;
+@@ -51,6 +55,12 @@
+         return $this->password;
+     }
+ 
++
++	public function getDisplay(): string
++	{
++		return $this->display;
++	}
++
+     public function getRoles(): array
+     {
+         return [$this->role];
+@@ -74,7 +84,6 @@
+ 
+         return
+             $this->id === $user->id &&
+-            $this->username === $user->username &&
+             $this->password === $user->password &&
+             $this->role === $user->role &&
+             $this->status === $user->status;
+Index: manager/src/Security/OAuth/FacebookAuthenticator.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Security/OAuth/FacebookAuthenticator.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Security/OAuth/FacebookAuthenticator.php	(date 1572642943814)
+@@ -51,6 +51,9 @@
+         $network = 'facebook';
+         $id = $facebookUser->getId();
+         $username = $network . ':' . $id;
++        $command=new Command($network,$id);
++        $command->firstName=$facebookUser->getFirstName();
++        $command->lastName=$facebookUser->getLastName();
+ 
+         try {
+             return $userProvider->loadUserByUsername($username);
+Index: manager/templates/app/auth/signup.html.twig
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/templates/app/auth/signup.html.twig	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/templates/app/auth/signup.html.twig	(date 1572994133358)
+@@ -16,6 +16,22 @@
+ 
+                         {{ form_start(form) }}
+ 
++                        <div class="input-group mb-3">
++                            <div class="input-group-prepend">
++                                <span class="input-group-text"><i class="icon-user"></i></span>
++                            </div>
++                            {{ form_widget(form.firstName, {'attr': {'placeholder': 'First Name'}}) }}
++                            {{ form_errors(form.firstName) }}
++                        </div>
++
++                        <div class="input-group mb-3">
++                            <div class="input-group-prepend">
++                                <span class="input-group-text"><i class="icon-user"></i></span>
++                            </div>
++                            {{ form_widget(form.lastName, {'attr': {'placeholder': 'Last Name'}}) }}
++                            {{ form_errors(form.lastName) }}
++                        </div>
++
+                         <div class="input-group mb-3">
+                             <div class="input-group-prepend">
+                                 <span class="input-group-text">@</span>
+Index: manager/src/Model/User/UseCase/Email/Request/Command.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Email/Request/Command.php	(date 1572388168258)
++++ manager/src/Model/User/UseCase/Email/Request/Command.php	(date 1572388168258)
+@@ -0,0 +1,27 @@
++<?php
++
++
++namespace App\Model\User\UseCase\Email\Request;
++use Symfony\Component\Validator\Constraints as Assert;
++
++
++class Command
++{
++	/**
++	 * @var string
++	 */
++	public $id;
++	/**
++	 * @var string
++	 * @Assert\NotBlank()
++	 * @Assert\Email()
++	 */
++	public $email;
++
++	public function __construct(string $id)
++	{
++
++		$this->id = $id;
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Model/User/UseCase/Email/Request/Handler.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Email/Request/Handler.php	(date 1572391211984)
++++ manager/src/Model/User/UseCase/Email/Request/Handler.php	(date 1572391211984)
+@@ -0,0 +1,62 @@
++<?php
++
++
++namespace App\Model\User\UseCase\Email\Request;
++
++
++use App\Model\Flusher;
++use App\Model\User\Entity\User\Email;
++use App\Model\User\Entity\User\Id;
++use App\Model\User\Entity\User\UserRepository;
++use App\Model\User\Service\NewEmailConfirmTokenizer;
++use App\Model\User\Service\NewEmailConfirmTokenSender;
++
++class Handler
++{
++	/**
++	 * @var UserRepository
++	 */
++	private $users;
++	/**
++	 * @var NewEmailConfirmTokenizer
++	 */
++	private $tokenizer;
++	/**
++	 * @var NewEmailConfirmTokenSender
++	 */
++	private $sender;
++	/**
++	 * @var Flusher
++	 */
++	private $flusher;
++
++	public function __construct(
++		UserRepository $users,
++	    NewEmailConfirmTokenizer $tokenizer,
++		NewEmailConfirmTokenSender $sender,
++		Flusher $flusher
++	)
++	{
++
++		$this->users = $users;
++		$this->tokenizer = $tokenizer;
++		$this->sender = $sender;
++		$this->flusher = $flusher;
++	}
++
++	public function handle(Command $command)
++	{
++		$user=$this->users->get(new Id($command->id));
++		$email=new Email($command->email);
++
++		if ($this->users->hasByEmail($email)){
++			throw new \DomainException('Email is already in use.');
++		}
++		$user->requestEmailChanging(
++			$email,$token=$this->tokenizer->generate()
++		);
++		$this->flusher->flush();
++		$this->sender->send($email,$token);
++	}
++
++}
+\ No newline at end of file
+Index: manager/assets/css/_variables.scss
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/assets/css/_variables.scss	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/assets/css/_variables.scss	(date 1572301022822)
+@@ -1,1 +1,11 @@
+-$breadcrumb-margin-bottom: 15px;
+\ No newline at end of file
++$body-bg: #f6f6f6;
++$font-size-base: .85rem;
++
++$breadcrumb-margin-bottom: 20px;
++
++$table-border-color: #e6e6e6;
++$table-cell-padding: 0.55rem;
++
++$card-border-color: #e6e6e6;
++$card-spacer-x: .7rem;
++$card-spacer-y: .6rem;
+\ No newline at end of file
+Index: manager/src/Model/User/UseCase/Email/Request/Form.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Email/Request/Form.php	(date 1572476506511)
++++ manager/src/Model/User/UseCase/Email/Request/Form.php	(date 1572476506511)
+@@ -0,0 +1,23 @@
++<?php
++
++
++namespace App\Model\User\UseCase\Email\Request;
++
++
++use Symfony\Component\Form\AbstractType;
++use Symfony\Component\Form\Extension\Core\Type;
++use Symfony\Component\Form\FormBuilderInterface;
++use Symfony\Component\OptionsResolver\OptionsResolver;
++
++class Form extends AbstractType
++{
++	public function buildForm(FormBuilderInterface $builder, array $options)
++	{
++		$builder->add('email',Type\EmailType::class);
++	}
++	public function configureOptions(OptionsResolver $resolver)
++	{
++		$resolver->setDefaults(['data_class'=>Command::class]);
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Model/User/UseCase/SignUp/Request/Form.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/SignUp/Request/Form.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/src/Model/User/UseCase/SignUp/Request/Form.php	(date 1572642240112)
+@@ -12,6 +12,8 @@
+     public function buildForm(FormBuilderInterface $builder, array $options): void
+     {
+         $builder
++			->add('firstName',Type\TextType::class)
++			->add('lastName',Type\TextType::class)
+             ->add('email', Type\EmailType::class)
+             ->add('password', Type\PasswordType::class);
+     }
+Index: manager/tests/Builder/User/UserBuilder.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/tests/Builder/User/UserBuilder.php	(revision ab81e98aa01c60753d4615002917752566da66b8)
++++ manager/tests/Builder/User/UserBuilder.php	(date 1572994520930)
+@@ -5,6 +5,7 @@
+ namespace App\Tests\Builder\User;
+ 
+ use App\Model\User\Entity\User\Email;
++use App\Model\User\Entity\User\Name;
+ use App\Model\User\Entity\User\User;
+ use App\Model\User\Entity\User\Id;
+ 
+@@ -12,6 +13,7 @@
+ {
+     private $id;
+     private $date;
++    private $name;
+ 
+     private $email;
+     private $hash;
+@@ -25,6 +27,7 @@
+     {
+         $this->id = Id::next();
+         $this->date = new \DateTimeImmutable();
++        $this->name=new Name('First','Last');
+     }
+ 
+     public function viaEmail(Email $email = null, string $hash = null, string $token = null): self
+@@ -57,6 +60,7 @@
+             $user = User::signUpByEmail(
+                 $this->id,
+                 $this->date,
++                $this->name,
+                 $this->email,
+                 $this->hash,
+                 $this->token
+@@ -73,6 +77,7 @@
+             return User::signUpByNetwork(
+                 $this->id,
+                 $this->date,
++                $this->name,
+                 $this->network,
+                 $this->identity
+             );
+Index: manager/src/Model/User/UseCase/Email/Confirm/Command.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Email/Confirm/Command.php	(date 1572387490273)
++++ manager/src/Model/User/UseCase/Email/Confirm/Command.php	(date 1572387490273)
+@@ -0,0 +1,26 @@
++<?php
++declare(strict_types=1);
++
++namespace App\Model\User\UseCase\Email\Confirm;
++
++
++class Command
++{
++
++	/**
++	 * @var string
++	 */
++	public $id;
++	/**
++	 * @var string
++	 */
++	public $token;
++
++	public function __construct(string $id, string  $token)
++	{
++
++		$this->id = $id;
++		$this->token = $token;
++	}
++
++}
+\ No newline at end of file
+Index: manager/src/Model/User/UseCase/Email/Confirm/Handler.php
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- manager/src/Model/User/UseCase/Email/Confirm/Handler.php	(date 1572387490317)
++++ manager/src/Model/User/UseCase/Email/Confirm/Handler.php	(date 1572387490317)
+@@ -0,0 +1,36 @@
++<?php
++
++
++namespace App\Model\User\UseCase\Email\Confirm;
++
++
++use App\Model\Flusher;
++use App\Model\User\Entity\User\Id;
++use App\Model\User\Entity\User\UserRepository;
++
++class Handler
++{
++	/**
++	 * @var UserRepository
++	 */
++	private $users;
++	/**
++	 * @var Flusher
++	 */
++	private $flusher;
++
++	public function __construct(UserRepository $users, Flusher $flusher)
++	{
++
++		$this->users = $users;
++		$this->flusher = $flusher;
++	}
++
++	public function handle(Command $command)
++	{
++		$user=$this->users->get(new Id($command->id));
++		$user->confirmEmailChanging($command->token);
++		$this->flusher->flush();
++	}
++
++}
+\ No newline at end of file
+diff --git manager/public/favicon.ico manager/public/favicon.ico
+new file mode 100644
+index 0000000000000000000000000000000000000000..f0132f39eed66589ee45a067ce27cc85bc3caf4d
+GIT binary patch
+literal 15406
+zc%1E8TWl0n7#^ZeKCKVFnCPxIQt#Cu@}LGU#9NGtCIk}|YmCOk3lAo!QR9n7Uo=r4
+z>@KAiS}MILZLwITZD^$yQV9iYtrRH2wnBGic4u$1bNT(x*=~2Yvja1;vpYMofAXc-
+z&iwOz=RfEC=gKh4m`fOshrz!-=Cw;1W+lTgK41EG&E*W!fd8wlU3k8nVfJ0YFg5s&
+zhrGw6|F379-}?dU_a@nZ4@?1lEc@ns!?JGyh|@hF&5c?1m(CpqRSXyH&$q9E*#1wm
+z82to<UtR^a;RZwg(SeOn$fVFDaNF*@pg-5L5+c1XWU>1tNKSRoZzPU1S}XtN>p)G#
+zK{|WLa{LrA0@C~uegA(Cf+{6|-BP1@M&d^-Io+-6A3yjFeMgm&s3Vd^DhjHqf+~v;
+z{_zR@I>7pgk9~<c#;`2oSzwvP<3B-o=hL>eRa^Q%F@12sS2r;jw3>w+v-$#g27p<H
+zobQMH-XI(Bs<y{b1FuTCkTb(wdQRO~FO=IE{_@3Kzb>5Pu53hyHi3Aoi{gB_xl~9_
+zZeJW<6ybE0zsgU?Iwi^JBYqCY$Uo><$u-|)JAdk*y#?n#g-lHeAPl_i7(dm3a|_|u
+z*KOmE4!;M9!<%)HoNNUd-_128J`Zf;jpb{9I9E#k-I=FB=zp`U?VoG9mCorh79S6k
+zm7hQk&n)^U|7vr9|3sD_=lJF3SK^^8KekKL{1dtSXH5BqyPnBwf3f|andXm=*Jt~&
+zoC1EwYGd3#JPtCSjXlW$eCMO4`Gvk$^2(qp5-8DGL{J~t*9l*)i8KACxzo57Qkct&
+zF(oz!-1b!#`LQ2wTLG!rQA^y!k8i!#GIuT_yVm0x@+)kU&4?CVB#t&g?7-)^9(>9c
+z-irgyu0I@Ke>uGVbb9?=>^_6rjqH=uA~rDR-zOo)ec|zNfvca#7!G3$<CVF7ru9p-
+zjfCpGbwo4K4&PpR8P@sNEPdv*M#B(^W>SWb|EhKLxAU4zmx0s+*2ho<Xt4-vOMY+6
+zc^%eJxqa1e{9UZQ3b%m&{yvE9`#29m|67jhGK$EOH5)N<_T{v$s($CSRrOas{?Gc!
+zetdNAJD5{HGK}cZyYzgWZ+nQI^E;`ZoUxO=ZL$w$3@N$?OwRbpzE~<a0+HSqozvg7
+z7L@3m=D8Uo`;g=;kZZZymHKHJ6dA;sJ;1fz<4XOs462IlX%yJTo6Dx3?|h85VVRvW
+zj_^rP5*+GPv}KSIG#{{mYs#XZ=8x}gp=UG3a66q3lKdl{?8`gP$<%>(qL;o`7X8Jb
+z={D5br}?%LJBzvXfy&oU+8>SqB(E;5gK*C}SLi2@xMP~{+qu3dwf<D_cg^?780{YY
+zBktBed!T^+O|H=|<2*>y{`b65V*UE}I?W*5vtILUl8^YEPuiz{_XZ7z961HWj*(o;
+zs)Bb%WPTdQID5`03HXkOHRr!%?2rETq2)609gl!`dbnWjPfWC0x?7?fr{)zH?-^KX
+zqztlf2Bgr02~46-P!o@gkvqqcpI^33J4M5CNc_2#&T&g^$*Fc=x7Zi^#rkevL+6d9
+zH1X5`wws%5*PcPR`&p3q<C->GtSO>E@6vEv_3zr-Ru4Pwhxnm-kmiqS=Duc(v_+D`
+z#OZDj1~<~Vb*Z&y`@{7Zt2^jCKC<gM>~D3n&ly7<y?4R2JxKFHp}YT8R8c;-`3#Jn
+z$-Ddf)bAT~T1OG_AD;Jn*ShTPLmH@=+&OXk{f*2Wlyp7#2Gjka68m(fuX=~bofD$D
+Lv^S8db}`t0)Z|^c
+
