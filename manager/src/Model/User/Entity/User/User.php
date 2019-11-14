@@ -17,9 +17,10 @@ use Doctrine\ORM\Mapping as ORM;
  */
 class User
 {
-    private const STATUS_NEW = 'new';
-    private const STATUS_WAIT = 'wait';
+    public const STATUS_NEW = 'new';
+    public const STATUS_WAIT = 'wait';
     public const STATUS_ACTIVE = 'active';
+    public const STATUS_BLOCKED = 'blocked';
 
     /**
      * @ORM\Column(type="user_user_id")
@@ -94,6 +95,14 @@ class User
         $this->networks = new ArrayCollection();
 
     }
+    public static function create(Id $id,\DateTimeImmutable $date,Name $name,Email $email,string $hash):self
+	{
+		$user=new self($id,$date,$name);
+		$user->email=$email;
+		$user->passwordHash=$hash;
+		$user->status=self::STATUS_ACTIVE;
+		return $user;
+	}
 
     public static function signUpByEmail(Id $id, \DateTimeImmutable $date, Name $name,Email $email, string $hash, string $token): self
     {
@@ -205,12 +214,43 @@ class User
 
 	 }
 
+	public function edit(Email $email,Name $name)
+	{
+		$this->name=$name;
+		$this->email=$email;
+
+	 }
+
     public function changeRole(Role $role): void
     {
         if ($this->role->isEqual($role)) {
             throw new \DomainException('Role is already same.');
         }
         $this->role = $role;
+    }
+
+	public function activate():void
+	{
+		if ($this->isActive()){
+			throw new \DomainException('User is already active.');
+		}
+		$this->status=self::STATUS_ACTIVE;
+
+    }
+
+	public function block():void
+	{
+		if ($this->isBlocked()){
+			throw new \DomainException('User is already blocked.');
+		}
+		$this->status=self::STATUS_BLOCKED;
+
+    }
+
+	public function isBlocked():bool
+	{
+		return $this->status===self::STATUS_BLOCKED;
+
     }
 
     public function isNew(): bool
@@ -274,6 +314,12 @@ class User
     public function getRole(): Role
     {
         return $this->role;
+    }
+
+	public function getStatus():string
+	{
+		return $this->status;
+
     }
 
     /**

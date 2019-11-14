@@ -117,6 +117,8 @@
       <path value="$PROJECT_DIR$/manager/vendor/symfony/service-contracts" />
       <path value="$PROJECT_DIR$/manager/vendor/symfony/webpack-encore-bundle" />
       <path value="$PROJECT_DIR$/manager/vendor/predis/predis" />
+      <path value="$PROJECT_DIR$/manager/vendor/knplabs/knp-paginator-bundle" />
+      <path value="$PROJECT_DIR$/manager/vendor/knplabs/knp-components" />
     </include_path>
   </component>
   <component name="PhpProjectSharedConfiguration" php_language_level="7.1" />

@@ -32,6 +32,8 @@
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/guzzlehttp/promises" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/guzzlehttp/psr7" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/jdorn/sql-formatter" />
+      <excludeFolder url="file://$MODULE_DIR$/manager/vendor/knplabs/knp-components" />
+      <excludeFolder url="file://$MODULE_DIR$/manager/vendor/knplabs/knp-paginator-bundle" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/knpuniversity/oauth2-client-bundle" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/league/oauth2-client" />
       <excludeFolder url="file://$MODULE_DIR$/manager/vendor/league/oauth2-facebook" />

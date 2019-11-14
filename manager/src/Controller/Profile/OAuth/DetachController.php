@@ -35,7 +35,7 @@ class DetachController extends AbstractController
 	 * @return Response
 	 */
 
-	public function detach(Request $request,string $network, string $identity,Handler $handler):Response
+	public function connect(Request $request,string $network, string $identity,Handler $handler):Response
 	{
 		if (!$this->isCsrfTokenValid('delete',$request->request->get('token'))){
 			return $this->redirectToRoute('profile');
